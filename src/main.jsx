@@ -23,10 +23,12 @@ const ACTIVATION_STORAGE = 'qeex_github_activation';
 const SITE = 'github.com';
 const MAILBOX_DOMAIN = 'yandex.com';
 const ACTIVATION_SECONDS = 20 * 60;
+const CANCEL_UNLOCK_SECONDS = 4 * 60;
 const POLL_INTERVAL_MS = 1000;
 
 function App() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE) || '');
+  const [hasStoredKeyOnLoad] = useState(() => Boolean(localStorage.getItem(API_KEY_STORAGE)?.trim()));
   const [balance, setBalance] = useState(null);
   const [activation, setActivation] = useState(() => loadStoredActivation());
   const [code, setCode] = useState('');
@@ -39,17 +41,26 @@ function App() {
   const [isPolling, setIsPolling] = useState(false);
   const [now, setNow] = useState(Date.now());
   const pollRef = useRef(null);
+  const didAutoRefreshRef = useRef(false);
 
   const hasKey = apiKey.trim().length > 0;
+  const secondsActive = useMemo(() => {
+    if (!activation?.createdAt) {
+      return 0;
+    }
+
+    return Math.max(Math.floor((now - activation.createdAt) / 1000), 0);
+  }, [activation, now]);
   const secondsLeft = useMemo(() => {
     if (!activation?.createdAt) {
       return 0;
     }
 
-    const elapsed = Math.floor((now - activation.createdAt) / 1000);
-    return Math.max(ACTIVATION_SECONDS - elapsed, 0);
-  }, [activation, now]);
+    return Math.max(ACTIVATION_SECONDS - secondsActive, 0);
+  }, [activation?.createdAt, secondsActive]);
   const expired = Boolean(activation) && secondsLeft <= 0 && !received;
+  const cancelUnlockSecondsLeft = activation ? Math.max(CANCEL_UNLOCK_SECONDS - secondsActive, 0) : 0;
+  const canCancel = Boolean(activation?.id) && cancelUnlockSecondsLeft === 0 && !received && !expired && !isCancelling;
 
   useEffect(() => {
     localStorage.setItem(API_KEY_STORAGE, apiKey.trim());
@@ -117,6 +128,15 @@ function App() {
       setIsBalanceLoading(false);
     }
   }, [callQeex]);
+
+  useEffect(() => {
+    if (!hasStoredKeyOnLoad || didAutoRefreshRef.current || !hasKey) {
+      return;
+    }
+
+    didAutoRefreshRef.current = true;
+    refreshBalance();
+  }, [hasKey, hasStoredKeyOnLoad, refreshBalance]);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -199,7 +219,7 @@ function App() {
   };
 
   const cancelActivation = async () => {
-    if (!activation?.id) {
+    if (!activation?.id || !canCancel) {
       return;
     }
 
@@ -357,9 +377,13 @@ function App() {
                 <Copy />
                 Copy code
               </button>
-              <button className="ghost-button" onClick={cancelActivation} disabled={!activation?.id || received || expired || isCancelling}>
+              <button className="ghost-button" onClick={cancelActivation} disabled={!canCancel}>
                 {isCancelling ? <Loader2 className="spin" /> : <XCircle />}
-                Cancel email
+                {isCancelling
+                  ? 'Cancelling...'
+                  : cancelUnlockSecondsLeft > 0
+                    ? `Cancel email (${cancelUnlockSecondsLeft}s)`
+                    : 'Cancel email'}
               </button>
               <button className="ghost-button" onClick={resetActivation}>
                 <RefreshCcw />
