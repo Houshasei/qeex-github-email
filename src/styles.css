@@ -137,6 +137,10 @@ button:disabled {
   margin-bottom: 18px;
 }
 
+.grid.key-saved {
+  grid-template-columns: 1fr;
+}
+
 .panel {
   position: relative;
   overflow: hidden;
@@ -288,6 +292,20 @@ button:disabled {
   flex-direction: column;
   justify-content: space-between;
   min-height: 244px;
+}
+
+.balance-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.balance-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .balance-value {

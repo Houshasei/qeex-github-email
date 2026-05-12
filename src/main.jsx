@@ -40,6 +40,9 @@ function App() {
   const [isPolling, setIsPolling] = useState(false);
   const [now, setNow] = useState(Date.now());
   const pollRef = useRef(null);
+  const pollCursorRef = useRef(0);
+  const isPollingRequestRef = useRef(false);
+  const activationsRef = useRef([]);
   const didAutoRefreshRef = useRef(false);
 
   const hasKey = apiKey.trim().length > 0;
@@ -61,6 +64,10 @@ function App() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    activationsRef.current = activations;
+  }, [activations]);
 
   const callQeex = useCallback(
     async (method, params = {}) => {
@@ -136,11 +143,16 @@ function App() {
       window.clearInterval(pollRef.current);
       pollRef.current = null;
     }
+    isPollingRequestRef.current = false;
     setIsPolling(false);
   }, []);
 
   const pollCodes = useCallback(async () => {
-    const waitingActivations = activations.filter((item) => {
+    if (isPollingRequestRef.current) {
+      return;
+    }
+
+    const waitingActivations = activationsRef.current.filter((item) => {
       const expired = getSecondsLeft(item, Date.now()) <= 0;
       return !item.received && !expired;
     });
@@ -150,37 +162,26 @@ function App() {
       return;
     }
 
+    const activation = waitingActivations[pollCursorRef.current % waitingActivations.length];
+    pollCursorRef.current += 1;
+    isPollingRequestRef.current = true;
+
     try {
-      const results = await Promise.allSettled(
-        waitingActivations.map(async (item) => ({
-          id: item.id,
-          result: await callQeex('emailCode', { id: item.id }),
-        })),
-      );
-
-      let receivedAny = false;
-
-      results.forEach((item) => {
-        if (item.status === 'fulfilled' && item.value.result?.received) {
-          updateActivation(item.value.id, {
-            code: item.value.result.code || '',
-            received: true,
-            receivedAt: Date.now(),
-          });
-          receivedAny = true;
-        } else if (item.status === 'rejected') {
-          setError(item.reason?.message || 'Qeex request failed.');
-        }
-      });
-
-      if (receivedAny) {
+      const result = await callQeex('emailCode', { id: activation.id });
+      if (result?.received) {
+        updateActivation(activation.id, {
+          code: result.code || '',
+          received: true,
+          receivedAt: Date.now(),
+        });
         await refreshBalance();
       }
     } catch (caught) {
       setError(caught.message);
-      stopPolling();
+    } finally {
+      isPollingRequestRef.current = false;
     }
-  }, [activations, callQeex, refreshBalance, stopPolling, updateActivation]);
+  }, [callQeex, refreshBalance, stopPolling, updateActivation]);
 
   const startPolling = useCallback(() => {
     const hasWaitingActivation = activations.some((item) => !item.received && getSecondsLeft(item, Date.now()) > 0);
@@ -312,43 +313,45 @@ function App() {
         <h1>GitHub Email Code</h1>
       </section>
 
-      <section className="grid">
-        <div className="panel key-panel">
-          <div className="panel-title">
-            <KeyRound />
-            <div>
-              <h2>API Key</h2>
+      <section className={`grid ${hasKey ? 'key-saved' : ''}`}>
+        {!hasKey && (
+          <div className="panel key-panel">
+            <div className="panel-title">
+              <KeyRound />
+              <div>
+                <h2>API Key</h2>
+              </div>
             </div>
-          </div>
 
-          <label className="input-wrap">
-            <span>Qeex API key</span>
-            <input
-              type="password"
-              value={apiKey}
-              placeholder="Paste your API key"
-              onChange={(event) => setApiKey(event.target.value)}
-              autoComplete="off"
-            />
-          </label>
-
-          <div className="button-row">
-            <button className="secondary-button" onClick={refreshBalance} disabled={!hasKey || isBalanceLoading}>
-              {isBalanceLoading ? <Loader2 className="spin" /> : <RefreshCcw />}
-              Refresh balance
-            </button>
-            <button className="ghost-button" onClick={clearKey} disabled={!hasKey}>
-              <Trash2 />
-              Clear key
-            </button>
+            <label className="input-wrap">
+              <span>Qeex API key</span>
+              <input
+                type="password"
+                value={apiKey}
+                placeholder="Paste your API key"
+                onChange={(event) => setApiKey(event.target.value)}
+                autoComplete="off"
+              />
+            </label>
           </div>
-        </div>
+        )}
 
         <div className="panel balance-card">
-          <div className="panel-title">
-            <Wallet />
-            <div>
-              <h2>Balance</h2>
+          <div className="balance-header">
+            <div className="panel-title">
+              <Wallet />
+              <div>
+                <h2>Balance</h2>
+              </div>
+            </div>
+
+            <div className="balance-actions">
+              <button className="icon-button" onClick={refreshBalance} disabled={!hasKey || isBalanceLoading} aria-label="Refresh balance" title="Refresh balance">
+                {isBalanceLoading ? <Loader2 className="spin" /> : <RefreshCcw />}
+              </button>
+              <button className="icon-button" onClick={clearKey} disabled={!hasKey} aria-label="Clear API key" title="Clear API key">
+                <Trash2 />
+              </button>
             </div>
           </div>
           <div className="balance-value">${formattedBalance}</div>
