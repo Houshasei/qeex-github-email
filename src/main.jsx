@@ -26,6 +26,108 @@ const MAILBOX_DOMAIN = 'yandex.com';
 const ACTIVATION_SECONDS = 20 * 60;
 const CANCEL_UNLOCK_SECONDS = 4 * 60;
 const POLL_INTERVAL_MS = 1000;
+const LOVE_QUOTES = [
+  'Si EJ ug Angelika dili muundang bisan kapoy na ang adlaw.',
+  'Si EJ ug Angelika magpadayon kay ang gugma dili basta mosurrender.',
+  'Si EJ ug Angelika kabalo nga ang lisod karon mahimong kalig-on ugma.',
+  'Si EJ ug Angelika mopili gihapon sa paglaum kada segundo.',
+  'Si EJ ug Angelika dili magpildi sa kahadlok.',
+  'Si EJ ug Angelika magkupot sa damgo hangtod maabot.',
+  'Si EJ ug Angelika mutindog balik bisan kapila matumba.',
+  'Si EJ ug Angelika nagtuo nga kaya pa, pirmi pa.',
+  'Si EJ ug Angelika dili biyaan ang pangandoy.',
+  'Si EJ ug Angelika padayon lang, hinay man pero sigurado.',
+  'Si EJ ug Angelika mas lig-on pa sa unos.',
+  'Si EJ ug Angelika magpabilin bisan lisod ang dalan.',
+  'Si EJ ug Angelika dili mahadlok magsugod usab.',
+  'Si EJ ug Angelika kabalo nga kada hulat naay bunga.',
+  'Si EJ ug Angelika magtinabangay hangtod molamdag ang tanan.',
+  'Si EJ ug Angelika dili magpadala sa kaluya.',
+  'Si EJ ug Angelika magpuyo sa pagtuo, dili sa duda.',
+  'Si EJ ug Angelika kanunay mopili sa usag usa.',
+  'Si EJ ug Angelika nagdala ug kusog sa matag damgo.',
+  'Si EJ ug Angelika dili musibog kung klaro ang tumong.',
+  'Si EJ ug Angelika moingon, kaya nato ni.',
+  'Si EJ ug Angelika magpadayon bisan walay sayon nga agianan.',
+  'Si EJ ug Angelika dili magpaalkansi sa problema.',
+  'Si EJ ug Angelika mas mohayag kung ngitngit ang palibot.',
+  'Si EJ ug Angelika nagpakita nga ang tinuod nga gugma molahutay.',
+  'Si EJ ug Angelika dili muhunong hangtod makita ang kadaugan.',
+  'Si EJ ug Angelika motuo sa gamay nga progreso kada adlaw.',
+  'Si EJ ug Angelika magtinud-anay, magtinabangay, magpadayon.',
+  'Si EJ ug Angelika dili magpildi sa kalibog.',
+  'Si EJ ug Angelika nagpabilin nga lig-on bisan hilom ang away.',
+  'Si EJ ug Angelika magdala ug kahayag sa usag usa.',
+  'Si EJ ug Angelika dili kalimot nga worth it ang paningkamot.',
+  'Si EJ ug Angelika magpadayon kay naay rason nga mahalon.',
+  'Si EJ ug Angelika mutan-aw sa ugma nga puno ug paglaum.',
+  'Si EJ ug Angelika dili mahurot ang kadasig.',
+  'Si EJ ug Angelika motindog bisan sakit ang kapildihan.',
+  'Si EJ ug Angelika magpahinumdom nga dili pa tapos ang istorya.',
+  'Si EJ ug Angelika dili mosuko sa proseso.',
+  'Si EJ ug Angelika mosalig sa panahon ug sa usag usa.',
+  'Si EJ ug Angelika maghimo ug milagro sa gamay nga lakang.',
+  'Si EJ ug Angelika dili maguba sa temporaryong kalisod.',
+  'Si EJ ug Angelika magpabilin nga matinud-anon sa pangandoy.',
+  'Si EJ ug Angelika kabalo nga ang paghuwat dili sayang.',
+  'Si EJ ug Angelika magtinabangay sa matag pagsulay.',
+  'Si EJ ug Angelika dili madaug sa kakapoy.',
+  'Si EJ ug Angelika magpadayon bisan hinay ang resulta.',
+  'Si EJ ug Angelika mohawid sa paglaum hangtod sa katapusan.',
+  'Si EJ ug Angelika dili magpalayo sa damgo.',
+  'Si EJ ug Angelika nagtuo nga ang gugma kusog kaayo.',
+  'Si EJ ug Angelika magpuyo sa kaisog, dili sa kahadlok.',
+  'Si EJ ug Angelika magpabilin bisan lisod sabton ang panahon.',
+  'Si EJ ug Angelika dili mosurrender kay naa pay chance.',
+  'Si EJ ug Angelika moingon nga ang kapoy pahulay ra, dili undang.',
+  'Si EJ ug Angelika magpadayon hangtod ang luha mahimong ngisi.',
+  'Si EJ ug Angelika dili magsayang sa paglaum.',
+  'Si EJ ug Angelika kabalo nga ang gamay nga lakang dako gihapon.',
+  'Si EJ ug Angelika magtukod ug kaugmaon nga dili dali mabungkag.',
+  'Si EJ ug Angelika dili mahadlok sa taas nga biyahe.',
+  'Si EJ ug Angelika magdala ug kusog bisan sa hilom nga adlaw.',
+  'Si EJ ug Angelika dili magpailad sa temporaryong kapakyasan.',
+  'Si EJ ug Angelika magpabilin nga duol bisan layo ang agianan.',
+  'Si EJ ug Angelika mopili ug pagbangon kada buntag.',
+  'Si EJ ug Angelika dili undangan ang butang nga gihigugma.',
+  'Si EJ ug Angelika magkupot sa saad ug sa paglaum.',
+  'Si EJ ug Angelika motuo nga naay maayo human sa lisod.',
+  'Si EJ ug Angelika dili magpaubos sa problema.',
+  'Si EJ ug Angelika magpabilin nga kusgan bisan naay kulba.',
+  'Si EJ ug Angelika magdala ug inspirasyon sa matag adlaw.',
+  'Si EJ ug Angelika dili kalimot nga kaya nila ni.',
+  'Si EJ ug Angelika padayon lang bisan daghan ug pangutana.',
+  'Si EJ ug Angelika magpuyo nga puno sa pagtuo.',
+  'Si EJ ug Angelika dili magpasulabi sa kahadlok kaysa gugma.',
+  'Si EJ ug Angelika moabot ra kung dili sila muundang.',
+  'Si EJ ug Angelika magpabilin nga solid bisan mokusog ang hangin.',
+  'Si EJ ug Angelika dili magtan-aw sa kapildihan isip katapusan.',
+  'Si EJ ug Angelika maghimo sa sakit nga leksyon nga kusog.',
+  'Si EJ ug Angelika magpadayon kay naay damgo nga naghulat.',
+  'Si EJ ug Angelika dili mawala basta magtinabangay.',
+  'Si EJ ug Angelika magdala ug neon nga paglaum sa ngitngit.',
+  'Si EJ ug Angelika dili mawad-an ug rason nga mopadayon.',
+  'Si EJ ug Angelika magtinabangay hangtod mahimong hayag ang tanan.',
+  'Si EJ ug Angelika kabalo nga ang tinuod molahutay.',
+  'Si EJ ug Angelika dili mobiya sa fight nga importante.',
+  'Si EJ ug Angelika magpadayon bisan gamay ra ang makita nga progress.',
+  'Si EJ ug Angelika motuo nga ang gugma ug paningkamot mudaug.',
+  'Si EJ ug Angelika dili musugot nga pildi ang katapusan.',
+  'Si EJ ug Angelika mohawid sa kusog nga gikan sa usag usa.',
+  'Si EJ ug Angelika magpabilin nga brave bisan dili perfect.',
+  'Si EJ ug Angelika dili muundang kay mahal nila ang pangandoy.',
+  'Si EJ ug Angelika magpadayon bisan ulan, init, o bagyo.',
+  'Si EJ ug Angelika naghimo sa kada segundo nga chance.',
+  'Si EJ ug Angelika dili makalimot nga ang kalisod temporaryo ra.',
+  'Si EJ ug Angelika magtukod ug storya nga dili basta mahuman.',
+  'Si EJ ug Angelika magpabilin nga lig-on sa gugma ug kinabuhi.',
+  'Si EJ ug Angelika dili maghunahuna ug give up karon.',
+  'Si EJ ug Angelika motuo nga ang best padulong pa.',
+  'Si EJ ug Angelika magpadayon hangtod ang impossible mahimong tinuod.',
+  'Si EJ ug Angelika dili mubiya sa usag usa ug sa damgo.',
+  'Si EJ ug Angelika magdala ug paglaum bisan asa sila moadto.',
+  'Si EJ ug Angelika dili mohunong kay ang ilang storya nagsugod pa.',
+];
 
 function App() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE) || '');
@@ -300,6 +402,7 @@ function App() {
   };
 
   const formattedBalance = Number.isFinite(balance) ? balance.toFixed(4) : '—';
+  const currentQuote = LOVE_QUOTES[Math.floor(now / 1000) % LOVE_QUOTES.length];
 
   return (
     <main className="app-shell">
@@ -311,6 +414,10 @@ function App() {
           Qeex GitHub Mail
         </div>
         <h1>GitHub Email Code</h1>
+        <div className="quote-card">
+          <span>EJ × Angelika</span>
+          <strong>{currentQuote}</strong>
+        </div>
       </section>
 
       <section className={`grid ${hasKey ? 'key-saved' : ''}`}>
