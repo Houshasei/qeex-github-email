@@ -11,7 +11,6 @@ import {
   Loader2,
   Mail,
   RefreshCcw,
-  ShieldCheck,
   Sparkles,
   Trash2,
   Wallet,
@@ -36,6 +35,7 @@ function App() {
   const [error, setError] = useState('');
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [now, setNow] = useState(Date.now());
   const pollRef = useRef(null);
@@ -203,8 +203,14 @@ function App() {
       return;
     }
 
+    const confirmed = window.confirm('Cancel this email and request a refund?');
+    if (!confirmed) {
+      return;
+    }
+
     setError('');
     stopPolling();
+    setIsCancelling(true);
 
     try {
       await callQeex('emailCancel', { id: activation.id });
@@ -214,6 +220,8 @@ function App() {
       await refreshBalance();
     } catch (caught) {
       setError(caught.message);
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -255,13 +263,9 @@ function App() {
       <section className="hero">
         <div className="hero-badge">
           <Sparkles size={16} />
-          Qeex x GitHub activation console
+          Qeex GitHub Mail
         </div>
-        <h1>GitHub Email Code Receiver</h1>
-        <p>
-          Paste your Qeex API key once, order a GitHub activation email on
-          <span> {MAILBOX_DOMAIN}</span>, and let the app pull the code automatically.
-        </p>
+        <h1>GitHub Email Code</h1>
       </section>
 
       <section className="grid">
@@ -270,7 +274,6 @@ function App() {
             <KeyRound />
             <div>
               <h2>API Key</h2>
-              <p>Stored locally in this browser.</p>
             </div>
           </div>
 
@@ -302,14 +305,9 @@ function App() {
             <Wallet />
             <div>
               <h2>Balance</h2>
-              <p>Qeex account USD balance</p>
             </div>
           </div>
           <div className="balance-value">${formattedBalance}</div>
-          <div className="status-pill good">
-            <ShieldCheck size={16} />
-            Displayed with 4 decimals
-          </div>
         </div>
       </section>
 
@@ -318,8 +316,7 @@ function App() {
           <div className="panel-title">
             <Code2 />
             <div>
-              <h2>GitHub activation</h2>
-              <p>Target site is always {SITE}; mailbox domain is {MAILBOX_DOMAIN}.</p>
+              <h2>GitHub Email</h2>
             </div>
           </div>
 
@@ -342,8 +339,7 @@ function App() {
         ) : (
           <div className="empty-state">
             <Mail size={42} />
-            <h3>No active email yet</h3>
-            <p>Click “Get email” to order a fresh GitHub activation mailbox.</p>
+            <h3>No email yet</h3>
           </div>
         )}
 
@@ -355,24 +351,15 @@ function App() {
             <div className="code-content">
               <span className="eyebrow">Activation code</span>
               <strong>{received ? code || 'Received' : expired ? 'Expired' : 'Waiting for email...'}</strong>
-              <p>
-                {received
-                  ? 'Code received. You can copy it now.'
-                  : expired
-                    ? 'The 20-minute window has ended.'
-                    : isPolling
-                      ? 'Polling Qeex every 1 second.'
-                      : 'Polling is paused.'}
-              </p>
             </div>
             <div className="code-actions">
               <button className="secondary-button" onClick={() => copyText(code, 'code')} disabled={!code}>
                 <Copy />
                 Copy code
               </button>
-              <button className="ghost-button" onClick={cancelActivation} disabled={!activation?.id || received || expired}>
-                <XCircle />
-                Cancel
+              <button className="ghost-button" onClick={cancelActivation} disabled={!activation?.id || received || expired || isCancelling}>
+                {isCancelling ? <Loader2 className="spin" /> : <XCircle />}
+                Cancel email
               </button>
               <button className="ghost-button" onClick={resetActivation}>
                 <RefreshCcw />
@@ -382,6 +369,13 @@ function App() {
           </div>
         )}
       </section>
+
+      <footer className="credit">
+        Created by{' '}
+        <a href="https://t.me/qtkaybee" target="_blank" rel="noreferrer">
+          qtkaybee
+        </a>
+      </footer>
 
       {error && <div className="toast error">{error}</div>}
       {copied && <div className="toast success">Copied {copied} to clipboard.</div>}

@@ -542,6 +542,26 @@ button:disabled {
   color: #d1fae5;
 }
 
+.credit {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.credit a {
+  color: #7dd3fc;
+  font-weight: 800;
+  text-decoration: none;
+  text-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
+}
+
+.credit a:hover {
+  color: #e0f2fe;
+}
+
 @media (max-width: 920px) {
   .grid,
   .activation-grid,
