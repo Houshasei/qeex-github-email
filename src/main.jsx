@@ -402,7 +402,7 @@ function App() {
   };
 
   const formattedBalance = Number.isFinite(balance) ? balance.toFixed(4) : '—';
-  const currentQuote = LOVE_QUOTES[Math.floor(now / 1000) % LOVE_QUOTES.length];
+  const currentQuote = LOVE_QUOTES[Math.floor(now / 30000) % LOVE_QUOTES.length];
 
   return (
     <main className="app-shell">
