@@ -19,7 +19,8 @@ import {
 import './styles.css';
 
 const API_KEY_STORAGE = 'qeex_api_key';
-const ACTIVATION_STORAGE = 'qeex_github_activation';
+const ACTIVATIONS_STORAGE = 'qeex_github_activations';
+const LEGACY_ACTIVATION_STORAGE = 'qeex_github_activation';
 const SITE = 'github.com';
 const MAILBOX_DOMAIN = 'yandex.com';
 const ACTIVATION_SECONDS = 20 * 60;
@@ -30,49 +31,31 @@ function App() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE) || '');
   const [hasStoredKeyOnLoad] = useState(() => Boolean(localStorage.getItem(API_KEY_STORAGE)?.trim()));
   const [balance, setBalance] = useState(null);
-  const [activation, setActivation] = useState(() => loadStoredActivation());
-  const [code, setCode] = useState('');
-  const [received, setReceived] = useState(false);
+  const [activations, setActivations] = useState(() => loadStoredActivations());
   const [copied, setCopied] = useState('');
   const [error, setError] = useState('');
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancellingIds, setCancellingIds] = useState(() => new Set());
   const [isPolling, setIsPolling] = useState(false);
   const [now, setNow] = useState(Date.now());
   const pollRef = useRef(null);
   const didAutoRefreshRef = useRef(false);
 
   const hasKey = apiKey.trim().length > 0;
-  const secondsActive = useMemo(() => {
-    if (!activation?.createdAt) {
-      return 0;
-    }
-
-    return Math.max(Math.floor((now - activation.createdAt) / 1000), 0);
-  }, [activation, now]);
-  const secondsLeft = useMemo(() => {
-    if (!activation?.createdAt) {
-      return 0;
-    }
-
-    return Math.max(ACTIVATION_SECONDS - secondsActive, 0);
-  }, [activation?.createdAt, secondsActive]);
-  const expired = Boolean(activation) && secondsLeft <= 0 && !received;
-  const cancelUnlockSecondsLeft = activation ? Math.max(CANCEL_UNLOCK_SECONDS - secondsActive, 0) : 0;
-  const canCancel = Boolean(activation?.id) && cancelUnlockSecondsLeft === 0 && !received && !expired && !isCancelling;
 
   useEffect(() => {
     localStorage.setItem(API_KEY_STORAGE, apiKey.trim());
   }, [apiKey]);
 
   useEffect(() => {
-    if (activation) {
-      localStorage.setItem(ACTIVATION_STORAGE, JSON.stringify(activation));
+    if (activations.length > 0) {
+      localStorage.setItem(ACTIVATIONS_STORAGE, JSON.stringify(activations));
     } else {
-      localStorage.removeItem(ACTIVATION_STORAGE);
+      localStorage.removeItem(ACTIVATIONS_STORAGE);
     }
-  }, [activation]);
+    localStorage.removeItem(LEGACY_ACTIVATION_STORAGE);
+  }, [activations]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -138,6 +121,16 @@ function App() {
     refreshBalance();
   }, [hasKey, hasStoredKeyOnLoad, refreshBalance]);
 
+  const updateActivation = useCallback((id, changes) => {
+    setActivations((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...changes } : item)),
+    );
+  }, []);
+
+  const removeActivation = useCallback((id) => {
+    setActivations((current) => current.filter((item) => item.id !== id));
+  }, []);
+
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
       window.clearInterval(pollRef.current);
@@ -146,55 +139,79 @@ function App() {
     setIsPolling(false);
   }, []);
 
-  const pollCode = useCallback(async () => {
-    if (!activation?.id || secondsLeft <= 0 || received) {
+  const pollCodes = useCallback(async () => {
+    const waitingActivations = activations.filter((item) => {
+      const expired = getSecondsLeft(item, Date.now()) <= 0;
+      return !item.received && !expired;
+    });
+
+    if (waitingActivations.length === 0) {
       stopPolling();
       return;
     }
 
     try {
-      const result = await callQeex('emailCode', { id: activation.id });
-      if (result?.received) {
-        setCode(result.code || '');
-        setReceived(true);
-        stopPolling();
+      const results = await Promise.allSettled(
+        waitingActivations.map(async (item) => ({
+          id: item.id,
+          result: await callQeex('emailCode', { id: item.id }),
+        })),
+      );
+
+      let receivedAny = false;
+
+      results.forEach((item) => {
+        if (item.status === 'fulfilled' && item.value.result?.received) {
+          updateActivation(item.value.id, {
+            code: item.value.result.code || '',
+            received: true,
+            receivedAt: Date.now(),
+          });
+          receivedAny = true;
+        } else if (item.status === 'rejected') {
+          setError(item.reason?.message || 'Qeex request failed.');
+        }
+      });
+
+      if (receivedAny) {
         await refreshBalance();
       }
     } catch (caught) {
       setError(caught.message);
       stopPolling();
     }
-  }, [activation?.id, callQeex, received, refreshBalance, secondsLeft, stopPolling]);
+  }, [activations, callQeex, refreshBalance, stopPolling, updateActivation]);
 
   const startPolling = useCallback(() => {
-    if (!activation?.id || expired || received || pollRef.current) {
+    const hasWaitingActivation = activations.some((item) => !item.received && getSecondsLeft(item, Date.now()) > 0);
+
+    if (!hasWaitingActivation || pollRef.current) {
       return;
     }
 
     setIsPolling(true);
-    pollCode();
-    pollRef.current = window.setInterval(pollCode, POLL_INTERVAL_MS);
-  }, [activation?.id, expired, pollCode, received]);
+    pollCodes();
+    pollRef.current = window.setInterval(pollCodes, POLL_INTERVAL_MS);
+  }, [activations, pollCodes]);
 
   useEffect(() => {
-    if (activation?.id && !expired && !received && hasKey) {
+    if (activations.length > 0 && hasKey) {
       startPolling();
     }
 
     return stopPolling;
-  }, [activation?.id, expired, hasKey, received, startPolling, stopPolling]);
+  }, [activations.length, hasKey, startPolling, stopPolling]);
 
   useEffect(() => {
-    if (expired) {
+    const hasWaitingActivation = activations.some((item) => !item.received && getSecondsLeft(item, Date.now()) > 0);
+
+    if (!hasWaitingActivation) {
       stopPolling();
     }
-  }, [expired, stopPolling]);
+  }, [activations, now, stopPolling]);
 
   const orderEmail = async () => {
     setError('');
-    setCode('');
-    setReceived(false);
-    stopPolling();
     setIsOrdering(true);
 
     try {
@@ -203,13 +220,18 @@ function App() {
         domain: MAILBOX_DOMAIN,
       });
 
-      setActivation({
-        id: result.id,
-        email: result.email,
-        site: result.site || SITE,
-        domain: MAILBOX_DOMAIN,
-        createdAt: Date.now(),
-      });
+      setActivations((current) => [
+        {
+          id: result.id,
+          email: result.email,
+          site: result.site || SITE,
+          domain: MAILBOX_DOMAIN,
+          code: '',
+          received: false,
+          createdAt: Date.now(),
+        },
+        ...current,
+      ]);
       await refreshBalance();
     } catch (caught) {
       setError(caught.message);
@@ -218,30 +240,31 @@ function App() {
     }
   };
 
-  const cancelActivation = async () => {
-    if (!activation?.id || !canCancel) {
+  const cancelActivation = async (activation) => {
+    if (!canCancelActivation(activation, now, cancellingIds)) {
       return;
     }
 
-    const confirmed = window.confirm('Cancel this email and request a refund?');
+    const confirmed = window.confirm(`Cancel ${activation.email} and request a refund?`);
     if (!confirmed) {
       return;
     }
 
     setError('');
-    stopPolling();
-    setIsCancelling(true);
+    setCancellingIds((current) => new Set(current).add(activation.id));
 
     try {
       await callQeex('emailCancel', { id: activation.id });
-      setActivation(null);
-      setCode('');
-      setReceived(false);
+      removeActivation(activation.id);
       await refreshBalance();
     } catch (caught) {
       setError(caught.message);
     } finally {
-      setIsCancelling(false);
+      setCancellingIds((current) => {
+        const next = new Set(current);
+        next.delete(activation.id);
+        return next;
+      });
     }
   };
 
@@ -253,10 +276,11 @@ function App() {
   };
 
   const resetActivation = () => {
-    stopPolling();
-    setActivation(null);
-    setCode('');
-    setReceived(false);
+    setActivations([]);
+  };
+
+  const removeActivationCard = (id) => {
+    removeActivation(id);
     setError('');
   };
 
@@ -346,50 +370,68 @@ function App() {
           </button>
         </div>
 
-        {activation ? (
-          <div className="activation-grid">
-            <InfoCard icon={<Mail />} label="Email address" value={activation.email}>
-              <button className="icon-button" onClick={() => copyText(activation.email, 'email')}>
-                <Copy />
-              </button>
-            </InfoCard>
-            <InfoCard icon={<Clock3 />} label="Expires in" value={formatTime(secondsLeft)} accent={expired ? 'danger' : 'blue'} />
-            <InfoCard icon={<Clipboard />} label="Activation ID" value={activation.id} compact />
-          </div>
-        ) : (
+        {activations.length === 0 ? (
           <div className="empty-state">
             <Mail size={42} />
             <h3>No email yet</h3>
           </div>
-        )}
+        ) : (
+          <div className="activation-list">
+            {activations.map((item) => {
+              const secondsActive = getSecondsActive(item, now);
+              const secondsLeft = getSecondsLeft(item, now);
+              const expired = secondsLeft <= 0 && !item.received;
+              const cancelUnlockSecondsLeft = Math.max(CANCEL_UNLOCK_SECONDS - secondsActive, 0);
+              const isCancelling = cancellingIds.has(item.id);
+              const canCancel = canCancelActivation(item, now, cancellingIds);
 
-        {activation && (
-          <div className="code-stage">
-            <div className={`pulse-ring ${received ? 'received' : expired ? 'expired' : ''}`}>
-              {received ? <CheckCircle2 /> : expired ? <XCircle /> : <Activity />}
-            </div>
-            <div className="code-content">
-              <span className="eyebrow">Activation code</span>
-              <strong>{received ? code || 'Received' : expired ? 'Expired' : 'Waiting for email...'}</strong>
-            </div>
-            <div className="code-actions">
-              <button className="secondary-button" onClick={() => copyText(code, 'code')} disabled={!code}>
-                <Copy />
-                Copy code
-              </button>
-              <button className="ghost-button" onClick={cancelActivation} disabled={!canCancel}>
-                {isCancelling ? <Loader2 className="spin" /> : <XCircle />}
-                {isCancelling
-                  ? 'Cancelling...'
-                  : cancelUnlockSecondsLeft > 0
-                    ? `Cancel email (${cancelUnlockSecondsLeft}s)`
-                    : 'Cancel email'}
-              </button>
-              <button className="ghost-button" onClick={resetActivation}>
-                <RefreshCcw />
-                Reset
-              </button>
-            </div>
+              return (
+                <article className="activation-card" key={item.id}>
+                  <div className="activation-grid">
+                    <InfoCard icon={<Mail />} label="Email address" value={item.email}>
+                      <button className="icon-button" onClick={() => copyText(item.email, 'email')}>
+                        <Copy />
+                      </button>
+                    </InfoCard>
+                    <InfoCard icon={<Clock3 />} label="Expires in" value={formatTime(secondsLeft)} accent={expired ? 'danger' : 'blue'} />
+                    <InfoCard icon={<Clipboard />} label="Activation ID" value={item.id} compact />
+                  </div>
+
+                  <div className="code-stage">
+                    <div className={`pulse-ring ${item.received ? 'received' : expired ? 'expired' : ''}`}>
+                      {item.received ? <CheckCircle2 /> : expired ? <XCircle /> : <Activity />}
+                    </div>
+                    <div className="code-content">
+                      <span className="eyebrow">Activation code</span>
+                      <strong>{item.received ? item.code || 'Received' : expired ? 'Expired' : 'Waiting for email...'}</strong>
+                    </div>
+                    <div className="code-actions">
+                      <button className="secondary-button" onClick={() => copyText(item.code, 'code')} disabled={!item.code}>
+                        <Copy />
+                        Copy code
+                      </button>
+                      <button className="ghost-button" onClick={() => cancelActivation(item)} disabled={!canCancel}>
+                        {isCancelling ? <Loader2 className="spin" /> : <XCircle />}
+                        {isCancelling
+                          ? 'Cancelling...'
+                          : cancelUnlockSecondsLeft > 0 && !item.received && !expired
+                            ? `Cancel email (${cancelUnlockSecondsLeft}s)`
+                            : 'Cancel email'}
+                      </button>
+                      <button className="ghost-button" onClick={() => removeActivationCard(item.id)}>
+                        <Trash2 />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+
+            <button className="ghost-button clear-all-button" onClick={resetActivation}>
+              <RefreshCcw />
+              Clear list
+            </button>
           </div>
         )}
       </section>
@@ -426,22 +468,54 @@ function formatTime(totalSeconds) {
   return `${minutes}:${seconds}`;
 }
 
-function loadStoredActivation() {
-  try {
-    const raw = localStorage.getItem(ACTIVATION_STORAGE);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw);
-    if (!parsed?.id || !parsed?.email || !parsed?.createdAt) {
-      return null;
-    }
-
-    return parsed;
-  } catch {
-    return null;
+function getSecondsActive(activation, now) {
+  if (!activation?.createdAt) {
+    return 0;
   }
+
+  return Math.max(Math.floor((now - activation.createdAt) / 1000), 0);
+}
+
+function getSecondsLeft(activation, now) {
+  if (!activation?.createdAt) {
+    return 0;
+  }
+
+  return Math.max(ACTIVATION_SECONDS - getSecondsActive(activation, now), 0);
+}
+
+function canCancelActivation(activation, now, cancellingIds) {
+  if (!activation?.id || activation.received || getSecondsLeft(activation, now) <= 0 || cancellingIds.has(activation.id)) {
+    return false;
+  }
+
+  return getSecondsActive(activation, now) >= CANCEL_UNLOCK_SECONDS;
+}
+
+function loadStoredActivations() {
+  try {
+    const raw = localStorage.getItem(ACTIVATIONS_STORAGE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(isValidActivation);
+      }
+    }
+
+    const legacyRaw = localStorage.getItem(LEGACY_ACTIVATION_STORAGE);
+    if (!legacyRaw) {
+      return [];
+    }
+
+    const legacy = JSON.parse(legacyRaw);
+    return isValidActivation(legacy) ? [{ ...legacy, code: legacy.code || '', received: Boolean(legacy.received) }] : [];
+  } catch {
+    return [];
+  }
+}
+
+function isValidActivation(value) {
+  return Boolean(value?.id && value?.email && value?.createdAt);
 }
 
 createRoot(document.getElementById('root')).render(<App />);

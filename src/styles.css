@@ -336,7 +336,26 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(190px, 0.55fr) minmax(220px, 0.7fr);
   gap: 14px;
+  margin-top: 0;
+}
+
+.activation-list {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 18px;
   margin-top: 26px;
+}
+
+.activation-card {
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 26px;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.26);
+}
+
+.clear-all-button {
+  justify-self: end;
 }
 
 .info-card {
