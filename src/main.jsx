@@ -26,6 +26,14 @@ const MAILBOX_DOMAIN = 'yandex.com';
 const ACTIVATION_SECONDS = 20 * 60;
 const CANCEL_UNLOCK_SECONDS = 4 * 60;
 const POLL_INTERVAL_MS = 1000;
+const WAVESPEED_API_KEYS_STORAGE = 'wavespeed_balance_keys';
+const PAGE_HASHES = new Set(['qeex', 'wavespeed']);
+const USD_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+});
 const LOVE_QUOTES = [
   'Si EJ ug Angelika dili muundang bisan kapoy na ang adlaw.',
   'Si EJ ug Angelika magpadayon kay ang gugma dili basta mosurrender.',
@@ -129,7 +137,7 @@ const LOVE_QUOTES = [
   'Si EJ ug Angelika dili mohunong kay ang ilang storya nagsugod pa.',
 ];
 
-function App() {
+function QeexPage() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE) || '');
   const [hasStoredKeyOnLoad] = useState(() => Boolean(localStorage.getItem(API_KEY_STORAGE)?.trim()));
   const [balance, setBalance] = useState(null);
@@ -401,13 +409,11 @@ function App() {
     }
   };
 
-  const formattedBalance = Number.isFinite(balance) ? balance.toFixed(4) : '—';
+  const formattedBalance = Number.isFinite(balance) ? balance.toFixed(4) : '--';
   const currentQuote = LOVE_QUOTES[Math.floor(now / 30000) % LOVE_QUOTES.length];
 
   return (
-    <main className="app-shell">
-      <div className="orb orb-one" />
-      <div className="orb orb-two" />
+    <>
       <section className="hero">
         <div className="hero-badge">
           <Sparkles size={16} />
@@ -546,17 +552,361 @@ function App() {
         )}
       </section>
 
+      {error && <div className="toast error">{error}</div>}
+      {copied && <div className="toast success">Copied {copied} to clipboard.</div>}
+    </>
+  );
+}
+
+function App() {
+  const [activePage, setActivePage] = useState(() => readActivePageFromHash());
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setActivePage(readActivePageFromHash());
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    const nextHash = `#${activePage}`;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, '', nextHash);
+    }
+  }, [activePage]);
+
+  return (
+    <main className="app-shell">
+      <div className="orb orb-one" />
+      <div className="orb orb-two" />
+
+      <nav className="view-switcher" aria-label="Project pages">
+        <button
+          className={`view-switcher-button ${activePage === 'qeex' ? 'active' : ''}`}
+          onClick={() => setActivePage('qeex')}
+          type="button"
+        >
+          <Mail />
+          GitHub Email
+        </button>
+        <button
+          className={`view-switcher-button ${activePage === 'wavespeed' ? 'active' : ''}`}
+          onClick={() => setActivePage('wavespeed')}
+          type="button"
+        >
+          <Wallet />
+          WaveSpeed Balance
+        </button>
+      </nav>
+
+      {activePage === 'wavespeed' ? <WaveSpeedBalancePage /> : <QeexPage />}
+
       <footer className="credit">
         Created by{' '}
         <a href="https://t.me/qtkaybee" target="_blank" rel="noreferrer">
           qtkaybee
         </a>
       </footer>
+    </main>
+  );
+}
+
+function WaveSpeedBalancePage() {
+  const [rawApiKeys, setRawApiKeys] = useState(() => localStorage.getItem(WAVESPEED_API_KEYS_STORAGE) || '');
+  const [results, setResults] = useState([]);
+  const [status, setStatus] = useState('Paste one API key per line, then click Check balances.');
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState('');
+  const [isChecking, setIsChecking] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem(WAVESPEED_API_KEYS_STORAGE, rawApiKeys);
+  }, [rawApiKeys]);
+
+  const apiKeys = useMemo(
+    () => rawApiKeys.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    [rawApiKeys],
+  );
+
+  const summary = useMemo(
+    () =>
+      results.reduce(
+        (totals, result) => {
+          if (result.status === 'Has balance') {
+            totals.withBalance += 1;
+          } else if (result.status === 'No balance') {
+            totals.withoutBalance += 1;
+          } else {
+            totals.errors += 1;
+          }
+
+          return totals;
+        },
+        { withBalance: 0, withoutBalance: 0, errors: 0 },
+      ),
+    [results],
+  );
+
+  const checkBalances = useCallback(async () => {
+    if (apiKeys.length === 0) {
+      setError('Enter at least one WaveSpeed API key.');
+      return;
+    }
+
+    setError('');
+    setCopied('');
+    setResults([]);
+    setStatus(`Checking 0 of ${apiKeys.length} API key(s)...`);
+    setIsChecking(true);
+
+    const nextResults = [];
+
+    for (const [index, apiKey] of apiKeys.entries()) {
+      let row;
+
+      try {
+        const result = await fetchWaveSpeedBalance(apiKey);
+        row = normalizeWaveSpeedResult(apiKey, result.balance, index);
+      } catch (caught) {
+        row = createWaveSpeedErrorRow(apiKey, caught, index);
+      }
+
+      nextResults.push(row);
+      setResults([...nextResults]);
+      setStatus(`Checked ${index + 1} of ${apiKeys.length} API key(s)...`);
+    }
+
+    setStatus(`Finished checking ${apiKeys.length} API key(s).`);
+    setIsChecking(false);
+  }, [apiKeys]);
+
+  const clearResults = useCallback(() => {
+    setResults([]);
+    setError('');
+    setCopied('');
+    setStatus('Paste one API key per line, then click Check balances.');
+  }, []);
+
+  const clearKeys = useCallback(() => {
+    setRawApiKeys('');
+    clearResults();
+  }, [clearResults]);
+
+  const copyWaveSpeedKey = useCallback(async (value) => {
+    if (!value) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied('WaveSpeed API key');
+      window.setTimeout(() => setCopied(''), 1800);
+    } catch {
+      setError('Clipboard copy failed.');
+    }
+  }, []);
+
+  const statusTone = error ? 'danger' : summary.errors > 0 ? 'warning' : 'good';
+
+  return (
+    <>
+      <section className="hero">
+        <div className="hero-badge">
+          <Sparkles size={16} />
+          WaveSpeed Utility
+        </div>
+        <h1>WaveSpeed Balance Checker</h1>
+        <p>Paste one API key per line to separate funded keys, zero-balance keys, and API errors in one clean run.</p>
+        <div className="quote-card">
+          <span>Batch Lookup</span>
+          <strong>Balances stay inside the site and match the same neon-green visual system.</strong>
+          <p>Each key is checked through a local proxy route so the page can reuse the existing project flow instead of sending keys in the URL.</p>
+        </div>
+      </section>
+
+      <section className="grid wavespeed-grid">
+        <div className="panel key-panel wavespeed-key-panel">
+          <div className="panel-title">
+            <KeyRound />
+            <div>
+              <h2>WaveSpeed Keys</h2>
+              <p>One API key per line. Results update as each lookup completes.</p>
+            </div>
+          </div>
+
+          <label className="input-wrap textarea-wrap">
+            <span>API keys</span>
+            <textarea
+              value={rawApiKeys}
+              onChange={(event) => setRawApiKeys(event.target.value)}
+              placeholder={'Paste one WaveSpeed API key per line\nws_live_key_one\nws_live_key_two'}
+              spellCheck="false"
+            />
+          </label>
+
+          <div className="button-row">
+            <button className="primary-button" onClick={checkBalances} disabled={apiKeys.length === 0 || isChecking} type="button">
+              {isChecking ? <Loader2 className="spin" /> : <Wallet />}
+              Check balances
+            </button>
+            <button className="secondary-button" onClick={clearResults} disabled={isChecking || results.length === 0} type="button">
+              <RefreshCcw />
+              Clear results
+            </button>
+            <button className="ghost-button" onClick={clearKeys} disabled={isChecking || rawApiKeys.trim().length === 0} type="button">
+              <Trash2 />
+              Clear keys
+            </button>
+          </div>
+        </div>
+
+        <div className="panel balance-card wavespeed-summary-card">
+          <div className="panel-title">
+            <Activity />
+            <div>
+              <h2>Run Summary</h2>
+              <p>{apiKeys.length} key(s) ready in the input box.</p>
+            </div>
+          </div>
+
+          <div className="summary-grid">
+            <SummaryCard label="With balance" value={summary.withBalance} tone="positive" />
+            <SummaryCard label="No balance" value={summary.withoutBalance} tone="neutral" />
+            <SummaryCard label="Errors" value={summary.errors} tone="error" />
+          </div>
+
+          <div className={`status-pill ${statusTone}`}>
+            {isChecking ? <Loader2 className="spin" /> : <Sparkles size={16} />}
+            {error || status}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel activation-panel wavespeed-results-panel">
+        <div className="activation-header">
+          <div className="panel-title">
+            <Code2 />
+            <div>
+              <h2>Balance Results</h2>
+              <p>Funded keys are green, zero-balance keys stay muted, and API failures are highlighted separately.</p>
+            </div>
+          </div>
+        </div>
+
+        {results.length === 0 ? (
+          <div className="empty-state">
+            <Wallet size={42} />
+            <h3>No balance results yet</h3>
+            <p>Run a batch check to list each key, its balance, and any API response details.</p>
+          </div>
+        ) : (
+          <div className="balance-table" role="table" aria-label="WaveSpeed balance results">
+            <div className="balance-table-head" role="row">
+              <span role="columnheader">API key</span>
+              <span role="columnheader">Balance</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Details</span>
+              <span role="columnheader">Action</span>
+            </div>
+
+            {results.map((result) => (
+              <article className={`balance-table-row ${result.tone}`} key={result.id} role="row">
+                <code className="balance-key" role="cell">
+                  {result.apiKey}
+                </code>
+                <strong className="balance-amount" role="cell">
+                  {result.balance}
+                </strong>
+                <span className={`result-status ${result.tone}`} role="cell">
+                  {result.status}
+                </span>
+                <p className="balance-detail" role="cell">
+                  {result.details}
+                </p>
+                <div className="balance-table-action" role="cell">
+                  <button className="icon-button" onClick={() => copyWaveSpeedKey(result.apiKey)} type="button" aria-label="Copy API key" title="Copy API key">
+                    <Copy />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       {error && <div className="toast error">{error}</div>}
       {copied && <div className="toast success">Copied {copied} to clipboard.</div>}
-    </main>
+    </>
   );
+}
+
+function SummaryCard({ label, value, tone }) {
+  return (
+    <div className={`summary-card ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function readActivePageFromHash() {
+  const page = window.location.hash.replace(/^#/, '').toLowerCase();
+  return PAGE_HASHES.has(page) ? page : 'qeex';
+}
+
+async function fetchWaveSpeedBalance(apiKey) {
+  const response = await fetch(new URL('/api/wavespeed/balance', window.location.origin), {
+    headers: {
+      'X-Wavespeed-Key': apiKey.trim(),
+      Accept: 'application/json',
+    },
+  });
+
+  let payload;
+
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('Unexpected response from the WaveSpeed proxy.');
+  }
+
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.error || 'WaveSpeed request failed.');
+  }
+
+  return payload.result;
+}
+
+function normalizeWaveSpeedResult(apiKey, balanceValue, index) {
+  const balance = Number(balanceValue);
+
+  if (!Number.isFinite(balance)) {
+    return createWaveSpeedErrorRow(apiKey, new Error('Balance value is missing or invalid.'), index);
+  }
+
+  const hasBalance = balance > 0;
+
+  return {
+    id: `${apiKey}-${index}`,
+    apiKey,
+    balance: USD_FORMATTER.format(balance),
+    status: hasBalance ? 'Has balance' : 'No balance',
+    details: hasBalance ? 'Balance is available.' : 'Balance is zero.',
+    tone: hasBalance ? 'positive' : 'neutral',
+  };
+}
+
+function createWaveSpeedErrorRow(apiKey, error, index) {
+  return {
+    id: `${apiKey}-${index}-error`,
+    apiKey,
+    balance: '--',
+    status: 'Error',
+    details: error instanceof Error ? error.message : 'Unexpected WaveSpeed error.',
+    tone: 'error',
+  };
 }
 
 function InfoCard({ icon, label, value, children, accent = 'blue', compact = false }) {
